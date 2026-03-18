@@ -3,8 +3,8 @@ package cn.wangwenzhu.autobackup;
 import lombok.extern.java.Log;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
-import run.halo.app.infra.utils.JsonUtils;
 import run.halo.app.plugin.PluginConfigUpdatedEvent;
+import tools.jackson.databind.json.JsonMapper;
 
 @Log
 @Component
@@ -20,11 +20,12 @@ public class AutoBackupConfigListener {
     @EventListener
     public void onConfigUpdated(PluginConfigUpdatedEvent event) {
 
-        AutoBackupConfig newConfig = JsonUtils.jsonToObject(
-            event.getNewConfig().get("base").toString(), AutoBackupConfig.class);
+        JsonMapper jsonMapper = JsonMapper.builder().build();
+        AutoBackupConfig newConfig = jsonMapper.readValue(
+            event.getNewSettingValues().get("base").toString(), AutoBackupConfig.class);
 
-        AutoBackupConfig oldConfig = JsonUtils.jsonToObject(
-            event.getOldConfig().get("base").toString(), AutoBackupConfig.class);
+        AutoBackupConfig oldConfig = jsonMapper.readValue(
+            event.getOldSettingValues().get("base").toString(), AutoBackupConfig.class);
 
         if (!newConfig.equals(oldConfig)) {
             log.info("AutoBackup plugin config updated");

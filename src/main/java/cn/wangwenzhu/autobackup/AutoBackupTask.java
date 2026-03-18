@@ -1,6 +1,6 @@
 package cn.wangwenzhu.autobackup;
 
-import static run.halo.app.extension.index.query.QueryFactory.all;
+import static run.halo.app.extension.index.query.Queries.empty;
 
 import cn.wangwenzhu.autobackup.scheduled.AbstractReschedulingConfigurer;
 import java.time.Duration;
@@ -63,7 +63,7 @@ public class AutoBackupTask extends AbstractReschedulingConfigurer {
             int maxBackupCount = config.get().getMaxBackupCount();
             client.listAll(
                     Backup.class,
-                    ListOptions.builder().fieldQuery(all()).build(),
+                    ListOptions.builder().fieldQuery(empty()).build(),
                     Sort.by(Sort.Order.desc("metadata.creationTimestamp"))
                 ).stream()
                 .skip(maxBackupCount)
