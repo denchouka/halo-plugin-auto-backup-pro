@@ -2,21 +2,21 @@
 apiVersion: plugin.halo.run/v1alpha1
 kind: Plugin
 metadata:
-  name: halo-plugin-auto-backup
+  name: halo-plugin-auto-backup-pro
 spec:
   enabled: true
   requires: ">=2.23.0"
   author:
-    name: 贴心小王
-    website: https://wangwenzhu.cn
+    name: Denchouka
+    website: https://tch.cool
   logo: logo.svg
-  configMapName: halo-plugin-auto-backup-configmap
-  settingName: halo-plugin-auto-backup-settings
-  homepage: https://github.com/yuxuefenfei/halo-plugin-auto-backup#readme
-  repo: https://github.com/yuxuefenfei/halo-plugin-auto-backup
-  issues: https://github.com/yuxuefenfei/halo-plugin-auto-backup/issues
-  displayName: "自动备份插件"
-  description: "支持按天/小时进行自动备份、自动删除冗余备份"
+  configMapName: halo-plugin-auto-backup-pro-configmap
+  settingName: halo-plugin-auto-backup-pro-settings
+  homepage: https://github.com/denchouka/halo-plugin-auto-backup-pro#readme
+  repo: https://github.com/denchouka/halo-plugin-auto-backup-pro
+  issues: https://github.com/denchouka/halo-plugin-auto-backup-pro/issues
+  displayName: "自动备份插件（增强版）"
+  description: "支持按天/小时进行自动备份、自动删除冗余备份，备份文件自动上传到腾讯云COS。"
   license:
     - name: "GPL-3.0"
       url: "https://github.com/yuxuefenfei/halo-plugin-auto-backup/blob/main/LICENSE"

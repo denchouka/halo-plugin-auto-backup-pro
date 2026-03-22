@@ -1,7 +1,7 @@
 apiVersion: v1alpha1
 kind: Setting
 metadata:
-  name: halo-plugin-auto-backup-settings
+  name: halo-plugin-auto-backup-pro-settings
 spec:
   forms:
     - group: base
@@ -41,3 +41,49 @@ spec:
               value: 4
             - label: 5
               value: 5
+    - group: cos
+      label: COS配置
+      formSchema:
+        - $formkit: checkbox
+          label: 启用 COS 上传
+          name: enabled
+          id: enabled
+          key: enabled
+          value: false
+        - $formkit: text
+          label: 地域
+          name: region
+          key: region
+          value: ''
+          validation: required
+          if: $get(enabled).value === true
+        - $formkit: password
+          label: SecretId
+          name: secretId
+          key: secretId
+          value: ''
+          validation: required
+          if: $get(enabled).value === true
+        - $formkit: password
+          label: SecretKey
+          name: secretKey
+          key: secretKey
+          value: ''
+          validation: required
+          if: $get(enabled).value === true
+        - $formkit: text
+          label: 存储桶名称
+          name: bucketName
+          key: bucketName
+          value: ''
+          validation: required
+          if: $get(enabled).value === true
+        - $formkit: text
+          label: 上传路径
+          name: uploadPath
+          key: uploadPath
+          value: ''
+          validation: required
+          placeholder: 例:halo/backup/
+          help: 备份文件目录格式：上传路径/${year}/${month}
+          if: $get(enabled).value === true

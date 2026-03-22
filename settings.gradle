@@ -3,5 +3,5 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
-rootProject.name = 'halo-plugin-auto-backup'
+rootProject.name = 'halo-plugin-auto-backup-pro'
 
