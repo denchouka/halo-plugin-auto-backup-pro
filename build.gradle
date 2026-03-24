@@ -5,7 +5,7 @@ plugins {
     id "run.halo.plugin.devtools" version "0.6.1"
 }
 
-group 'cn.wangwenzhu.autobackup'
+group = 'cn.wangwenzhu.autobackup'
 
 java {
     sourceCompatibility = JavaVersion.VERSION_21
@@ -14,9 +14,9 @@ java {
 
 repositories {
     mavenCentral()
-    maven { url 'https://s01.oss.sonatype.org/content/repositories/releases' }
-    maven { url 'https://s01.oss.sonatype.org/content/repositories/snapshots/' }
-    maven { url 'https://repo.spring.io/milestone' }
+    maven { url = 'https://s01.oss.sonatype.org/content/repositories/releases' }
+    maven { url = 'https://s01.oss.sonatype.org/content/repositories/snapshots/' }
+    maven { url = 'https://repo.spring.io/milestone' }
 }
 
 dependencies {
@@ -38,6 +38,8 @@ dependencies {
     implementation 'org.apache.httpcomponents:httpclient:4.5.14'
     implementation 'org.apache.httpcomponents:httpcore:4.4.16'
     implementation 'org.apache.httpcomponents:httpmime:4.5.14'
+    // Source: https://mvnrepository.com/artifact/joda-time/joda-time
+    implementation("joda-time:joda-time:2.14.1")
 
     testImplementation 'run.halo.app:api'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
@@ -53,6 +55,9 @@ tasks.withType(JavaCompile).configureEach {
 
 node {
     nodeProjectDir = file("${project.projectDir}/ui")
+    version = '22.19.0'
+    pnpmVersion = '10.11.0'
+    download = true
 }
 
 tasks.register('buildFrontend', PnpmTask) {
@@ -84,5 +89,5 @@ jar {
 halo {
     version = '2.23'
     debug = true
-    //suspend = true
+    suspend = true
 }
