@@ -93,7 +93,6 @@ spec:
           id: deleteOld
           key: deleteOld
           value: false
-          help: 默认每月1日0点删除上上个月的所有备份文件
           if: $get(enabled).value === true
         - $formkit: select
           label: 备份最大保存数量
