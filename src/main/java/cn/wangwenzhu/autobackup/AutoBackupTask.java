@@ -9,6 +9,10 @@ import com.qcloud.cos.ClientConfig;
 import com.qcloud.cos.auth.BasicCOSCredentials;
 import com.qcloud.cos.auth.COSCredentials;
 import com.qcloud.cos.http.HttpProtocol;
+import com.qcloud.cos.model.COSObjectSummary;
+import com.qcloud.cos.model.DeleteObjectsRequest;
+import com.qcloud.cos.model.ListObjectsRequest;
+import com.qcloud.cos.model.ObjectListing;
 import com.qcloud.cos.model.PutObjectRequest;
 import com.qcloud.cos.model.PutObjectResult;
 import com.qcloud.cos.region.Region;
@@ -17,11 +21,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import lombok.extern.log4j.Log4j2;
@@ -63,7 +69,8 @@ public class AutoBackupTask extends AbstractReschedulingConfigurer {
     private void autoBackup() {
         log.info("Auto backup task started");
 
-        String seq = Long.toHexString(System.currentTimeMillis() / 1000);
+        // 使用时间戳 + 随机数确保名称唯一性
+        String seq = Long.toHexString(System.currentTimeMillis()) + "-" + System.nanoTime();
 
         var metadata = new Metadata();
         metadata.setName("backup-" + seq);
@@ -89,104 +96,101 @@ public class AutoBackupTask extends AbstractReschedulingConfigurer {
                 .skip(maxBackupCount)
                 .forEach(client::delete);
             
-            // 上传到COS
-            uploadToCos(seq);
+            // COS操作
+            cosOperation(seq);
         }
 
         log.info("Auto backup task finished");
     }
 
     /**
-     * 上传到COS
-     * @param seq
+     * COS操作
      */
-    private void uploadToCos(String seq) {
+    private void cosOperation(String seq) {
+        Optional<CosConfig> config = settingFetcher.fetch("cos", CosConfig.class);
+        CosConfig cosConfig = config.get();
 
+        if (!cosConfig.isEnabled()) {
+            return;
+        }
+
+        // 上传到COS
+        uploadToCos(seq, cosConfig);
+        // 删除旧的备份文件
+        deleteOldTask(cosConfig);
+    }
+
+    /**
+     * 上传到COS
+     */
+    private void uploadToCos(String seq, CosConfig cosConfig) {
+
+        // 验证必要参数
+        if (cosConfig.getRegion() == null || cosConfig.getRegion().isBlank() ||
+            cosConfig.getSecretId() == null || cosConfig.getSecretId().isBlank() ||
+            cosConfig.getSecretKey() == null || cosConfig.getSecretKey().isBlank() ||
+            cosConfig.getBucketName() == null || cosConfig.getBucketName().isBlank() ||
+            cosConfig.getUploadPath() == null || cosConfig.getUploadPath().isBlank()) {
+            return;
+        }
+
+        // 等待备份完成
+        Backup completedBackup = waitForBackupCompletion(seq);
+        if (completedBackup == null) {
+            return;
+        }
+
+        // 获取备份创建时间
+        Instant creationTimestampInstant = completedBackup.getMetadata().getCreationTimestamp();
+        // 转换成yyyyMMddHHmmss格式
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss").withZone(ZoneId.of("Asia/Shanghai"));
+        String creationTimestamp = formatter.format(creationTimestampInstant);
+
+        // 上传路径
+        String uploadPath = cosConfig.getUploadPath();
+        if (!uploadPath.endsWith("/")) {
+            uploadPath = uploadPath + "/";
+        }
+
+        // 构造备份文件名（和实际备份文件名一致）
+        String backupFileName = creationTimestamp + "-" + completedBackup.getMetadata().getName() + ".zip";
+        // 上传到COS的路径
+        String key = uploadPath + backupFileName;
+
+        // 获取备份文件路径（需要从 Backup 资源中获取）
+        Path backupFilePath = getBackupFilePath(backupFileName);
+        if (backupFilePath == null || !Files.exists(backupFilePath)) {
+            return;
+        }
+
+        // 创建 COS 客户端
+        COSCredentials cred = new BasicCOSCredentials(
+            cosConfig.getSecretId(),
+            cosConfig.getSecretKey()
+        );
+
+        ClientConfig clientConfig = new ClientConfig(
+            new Region(cosConfig.getRegion())
+        );
+        clientConfig.setHttpProtocol(HttpProtocol.https);
+
+        COSClient cosClient = new COSClient(cred, clientConfig);
         try {
-
-            Optional<CosConfig> config = settingFetcher.fetch("cos", CosConfig.class);
-            CosConfig cosConfig = config.get();
-            if (!cosConfig.isEnabled()) {
-                log.debug("COS upload is disabled");
-                return;
-            }
-
-            // 验证必要参数
-            if (cosConfig.getRegion() == null || cosConfig.getRegion().isBlank() ||
-                cosConfig.getSecretId() == null || cosConfig.getSecretId().isBlank() ||
-                cosConfig.getSecretKey() == null || cosConfig.getSecretKey().isBlank() ||
-                cosConfig.getBucketName() == null || cosConfig.getBucketName().isBlank() ||
-                cosConfig.getUploadPath() == null || cosConfig.getUploadPath().isBlank()) {
-                log.warn("COS configuration is incomplete, skipping upload");
-                return;
-            }
-
-            // 等待备份完成
-            Backup completedBackup = waitForBackupCompletion(seq);
-            if (completedBackup == null) {
-                log.error("Backup completion check failed");
-                return;
-            }
-
-            // 获取备份创建时间
-            Instant creationTimestampInstant = completedBackup.getMetadata().getCreationTimestamp();
-            // 转换成yyyyMMddHHmmss格式
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss").withZone(ZoneId.of("Asia/Shanghai"));
-            String creationTimestamp = formatter.format(creationTimestampInstant);
-
-            // 上传路径
-            String uploadPath = cosConfig.getUploadPath();
-            if (!uploadPath.endsWith("/")) {
-                uploadPath = uploadPath + "/";
-            }
-
-            // 获取当前年份和月份
-            LocalDate now = LocalDate.now();
-            String year = String.valueOf(now.getYear());
-            String month = String.format("%02d", now.getMonthValue());
-
-            // 构造备份文件名（和实际备份文件名一致）
-            String backupFileName = creationTimestamp + "-" + completedBackup.getMetadata().getName() + ".zip";
-            // 上传到COS的路径
-            String key = uploadPath + year + "/" + month + "/" + backupFileName;
-
-            // 获取备份文件路径（需要从 Backup 资源中获取）
-            Path backupFilePath = getBackupFilePath(backupFileName);
-            if (backupFilePath == null || !Files.exists(backupFilePath)) {
-                log.error("Backup file not found at expected location");
-                return;
-            }
-
-            // 创建 COS 客户端
-            COSCredentials cred = new BasicCOSCredentials(
-                cosConfig.getSecretId(),
-                cosConfig.getSecretKey()
+            // 上传文件
+            File localFile = backupFilePath.toFile();
+            PutObjectRequest putObjectRequest = new PutObjectRequest(
+                cosConfig.getBucketName(),
+                key,
+                localFile
             );
-            
-            ClientConfig clientConfig = new ClientConfig(
-                new Region(cosConfig.getRegion())
-            );
-            clientConfig.setHttpProtocol(HttpProtocol.https);
-            
-            COSClient cosClient = new COSClient(cred, clientConfig);
-            try {
-                // 上传文件
-                File localFile = backupFilePath.toFile();
-                PutObjectRequest putObjectRequest = new PutObjectRequest(
-                    cosConfig.getBucketName(),
-                    key, 
-                    localFile
-                );
-                
-                PutObjectResult result = cosClient.putObject(putObjectRequest);
-                
-                log.info("Successfully uploaded {} to COS. Path: {}, ETag: {}", backupFileName, key, result.getETag());
-            } finally {
-                cosClient.shutdown();
-            }
 
+            PutObjectResult result = cosClient.putObject(putObjectRequest);
+
+            log.info("Successfully uploaded {} to COS. Path: {}, ETag: {}", backupFileName, key, result.getETag());
         } catch (Exception e) {
             log.error("Failed to upload backup to COS", e);
+        } finally {
+            cosClient.shutdown();
         }
     }
 
@@ -196,7 +200,7 @@ public class AutoBackupTask extends AbstractReschedulingConfigurer {
      * @return
      * @throws InterruptedException
      */
-    private Backup waitForBackupCompletion(String seq) throws InterruptedException {
+    private Backup waitForBackupCompletion(String seq) {
         // 等待备份完成，最多等待 5 分钟
         int maxAttempts = 300;
         int attempt = 0;
@@ -218,7 +222,11 @@ public class AutoBackupTask extends AbstractReschedulingConfigurer {
                 }
             }
 
-            Thread.sleep(1000);
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
             attempt++;
         }
 
@@ -243,6 +251,72 @@ public class AutoBackupTask extends AbstractReschedulingConfigurer {
         }
         
         return null;
+    }
+
+    /**
+     * 删除旧备份文件。
+     */
+    public void deleteOldTask(CosConfig cosConfig) {
+
+        if (!cosConfig.isDeleteOld()) {
+            return;
+        }
+
+        // 要删除的文件路径
+        String prefix  = cosConfig.getUploadPath();
+
+        // 创建COS客户端
+        COSCredentials cred = new BasicCOSCredentials(cosConfig.getSecretId(), cosConfig.getSecretKey());
+        ClientConfig clientConfig = new ClientConfig(new Region(cosConfig.getRegion()));
+        clientConfig.setHttpProtocol(HttpProtocol.https);
+        COSClient cosClient = new COSClient(cred, clientConfig);
+
+        try {
+
+            // 列出指定前缀下的所有对象
+            ListObjectsRequest listObjectsRequest = new ListObjectsRequest();
+            listObjectsRequest.setBucketName(cosConfig.getBucketName());
+            listObjectsRequest.setPrefix(prefix);
+
+            ObjectListing objectListing = cosClient.listObjects(listObjectsRequest);
+            List<COSObjectSummary> objectSummaries = objectListing.getObjectSummaries();
+
+            if (objectSummaries.isEmpty()) {
+                return;
+            }
+
+            // 按上传时间（lastModified）降序排序，最新的在前
+            List<COSObjectSummary> sortedList = objectSummaries.stream()
+                .sorted(Comparator.comparing(COSObjectSummary::getLastModified).reversed())
+                .toList();
+
+            // 保留前最大数量，其余删除
+            int maxCosBackupCount = cosConfig.getMaxCosBackupCount();
+            if (sortedList.size() <= maxCosBackupCount) {
+                return;
+            }
+
+            // 要删除的文件
+            List<COSObjectSummary> toDelete = sortedList.subList(maxCosBackupCount, sortedList.size());
+
+            // 构建要删除的对象列表
+            List<DeleteObjectsRequest.KeyVersion> keys = new ArrayList<>();
+            for (COSObjectSummary summary : toDelete) {
+                keys.add(new DeleteObjectsRequest.KeyVersion(summary.getKey()));
+            }
+
+            // 批量删除
+            DeleteObjectsRequest deleteObjectsRequest = new DeleteObjectsRequest(cosConfig.getBucketName());
+            deleteObjectsRequest.setKeys(keys);
+            cosClient.deleteObjects(deleteObjectsRequest);
+
+            log.info("Successfully delete backup from COS. size: {}, prefix: {}", keys.size(), prefix);
+
+        } catch (Exception e) {
+            log.error("Failed to delete backup from COS", e);
+        } finally {
+            cosClient.shutdown();
+        }
     }
 
     @Override
